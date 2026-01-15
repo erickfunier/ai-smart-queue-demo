@@ -1,0 +1,553 @@
+openapi: 3.0.3
+info:
+  title: AI Smart Queue API
+  description: |
+    Intelligent job queue system with AI-powered failure analysis and insights.
+    
+    This API provides three main functionalities:
+    - **Queue Management**: Create, retrieve, and retry jobs
+    - **Worker Runtime**: Background processing of queued jobs
+    - **AI Insights**: Automated failure analysis and recommendations
+    
+    The system follows Hexagonal Architecture with clean separation between domain logic, 
+    application services, and adapters.
+  version: 1.0.0
+  contact:
+    name: AI Smart Queue Team
+servers:
+  - url: http://localhost:8080
+    description: Queue Core Service
+  - url: http://localhost:8082
+    description: AI Insights Service
+
+tags:
+  - name: Jobs
+    description: Job queue management operations
+  - name: Insights
+    description: AI-powered failure analysis and insights
+  - name: Metrics
+    description: System metrics and monitoring
+
+paths:
+  /api/jobs/{id}:
+    get:
+      tags:
+        - Jobs
+      summary: Get job by ID
+      description: Retrieve a specific job by its unique identifier. Includes AI insights if available for failed jobs.
+      operationId: getJobById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Job UUID
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Job retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '400':
+          description: Invalid job ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/jobs:
+    post:
+      tags:
+        - Jobs
+      summary: Create a new job
+      description: Creates a new job and enqueues it for processing
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+            examples:
+              emailJob:
+                summary: Email notification job
+                value:
+                  queue: "default"
+                  type: "email"
+                  payload:
+                    to: "user@example.com"
+                    subject: "Welcome"
+                    body: "Welcome to our service"
+              webhookJob:
+                summary: Webhook delivery job
+                value:
+                  queue: "webhooks"
+                  type: "webhook"
+                  payload:
+                    url: "https://api.example.com/webhook"
+                    method: "POST"
+                    data:
+                      event: "user.created"
+      responses:
+        '201':
+          description: Job created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    get:
+      tags:
+        - Jobs
+      summary: List jobs
+      description: Retrieve a list of jobs with optional filtering by status, queue, and pagination
+      operationId: listJobs
+      parameters:
+        - name: status
+          in: query
+          description: Filter jobs by status
+          schema:
+            type: string
+            enum: [pending, processing, completed, failed, retrying]
+          example: "failed"
+        - name: queue
+          in: query
+          description: Filter jobs by queue name
+          schema:
+            type: string
+          example: "default"
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of jobs to skip for pagination
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/jobs/retry:
+    post:
+      tags:
+        - Jobs
+      summary: Retry a failed job
+      description: Resets a failed job to pending status and re-enqueues it for processing
+      operationId: retryJob
+      parameters:
+        - name: id
+          in: query
+          required: true
+          description: Job UUID to retry
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Job retried successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "retrying"
+        '400':
+          description: Invalid job ID or job cannot be retried
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/dlq:
+    get:
+      tags:
+        - Jobs
+      summary: Get Dead Letter Queue jobs
+      description: Retrieves jobs that have exceeded maximum retry attempts
+      operationId: getDLQJobs
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of jobs to skip (for pagination)
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: DLQ jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JobResponse'
+                  total:
+                    type: integer
+                    description: Total number of jobs in DLQ
+                    example: 42
+
+  /api/metrics:
+    get:
+      tags:
+        - Metrics
+      summary: Get system metrics
+      description: Returns aggregated metrics about job processing
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/insights/{id}:
+    get:
+      tags:
+        - Insights
+      summary: Get insight by ID
+      description: Retrieve a specific insight by its unique identifier
+      operationId: getInsightById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Insight UUID
+          schema:
+            type: string
+            format: uuid
+          example: "987e6543-e21b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Insight retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightResponse'
+        '400':
+          description: Invalid insight ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Insight not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/insights:
+    get:
+      tags:
+        - Insights
+      summary: List insights
+      description: Retrieve a list of insights with optional filtering by job and pagination
+      operationId: listInsights
+      parameters:
+        - name: job_id
+          in: query
+          description: Filter insights by job UUID
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        - name: limit
+          in: query
+          description: Maximum number of insights to return
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of insights to skip for pagination
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Insights retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InsightResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/insights/analyze:
+    post:
+      tags:
+        - Insights
+      summary: Analyze a failed job
+      description: Triggers AI analysis of a failed job to generate insights and recommendations
+      operationId: analyzeJob
+      parameters:
+        - name: job_id
+          in: query
+          required: true
+          description: Job UUID to analyze
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Analysis completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightResponse'
+        '400':
+          description: Invalid job ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Analysis failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    CreateJobRequest:
+      type: object
+      required:
+        - queue
+        - type
+        - payload
+      properties:
+        queue:
+          type: string
+          description: Queue name for job routing
+          example: "default"
+        type:
+          type: string
+          description: Job type identifier
+          example: "email"
+        payload:
+          type: object
+          description: Job-specific data (flexible JSON object)
+          example:
+            to: "user@example.com"
+            subject: "Hello"
+
+    JobResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique job identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        queue:
+          type: string
+          description: Queue name
+          example: "default"
+        type:
+          type: string
+          description: Job type
+          example: "email"
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, retrying]
+          description: Current job status
+          example: "pending"
+        attempts:
+          type: integer
+          description: Number of processing attempts
+          example: 0
+        payload:
+          type: object
+          description: Job payload data
+          example:
+            to: "user@example.com"
+        error:
+          type: string
+          description: Error message if job failed
+          example: "Connection timeout"
+        insight:
+          $ref: '#/components/schemas/InsightResponse'
+          description: AI-generated insights for failed jobs (only present if job has been analyzed)
+        created_at:
+          type: string
+          format: date-time
+          description: Job creation timestamp
+          example: "2025-12-22T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2025-12-22T10:35:00Z"
+
+    InsightResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique insight identifier
+          example: "987e6543-e21b-12d3-a456-426614174000"
+        job_id:
+          type: string
+          format: uuid
+          description: Related job identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        diagnosis:
+          type: string
+          description: AI-generated diagnosis of the failure
+          example: "Network timeout while connecting to external API"
+        recommendation:
+          type: string
+          description: Suggested action to resolve the issue
+          example: "Increase timeout to 30 seconds and add retry logic"
+        suggested_fix:
+          type: object
+          properties:
+            timeout_seconds:
+              type: integer
+              description: Recommended timeout value
+              example: 30
+            max_retries:
+              type: integer
+              description: Recommended retry count
+              example: 5
+            payload_patch:
+              type: object
+              description: Suggested payload modifications
+              example:
+                timeout: 30
+                retry_count: 5
+        created_at:
+          type: string
+          format: date-time
+          description: Insight creation timestamp
+          example: "2025-12-22T10:40:00Z"
+
+    MetricsResponse:
+      type: object
+      properties:
+        pending:
+          type: integer
+          description: Number of pending jobs
+          example: 150
+        processing:
+          type: integer
+          description: Number of jobs currently processing
+          example: 5
+        completed:
+          type: integer
+          description: Number of completed jobs
+          example: 1247
+        failed:
+          type: integer
+          description: Number of failed jobs
+          example: 23
+        retrying:
+          type: integer
+          description: Number of jobs being retried
+          example: 8
+        dlq_count:
+          type: integer
+          description: Number of jobs in Dead Letter Queue
+          example: 12
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Invalid job ID format"
