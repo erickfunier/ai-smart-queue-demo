@@ -1,0 +1,20 @@
+server:
+  port: 8080
+
+postgres:
+  dsn: "postgres://dev:dev@localhost:5432/appdb?sslmode=disable"
+
+redis:
+  addr: "localhost:6379"
+
+worker:
+  max_attempts: 3
+  base_backoff_ms: 500
+
+simulation:
+  enabled: true
+  failure_rate: 0.3
+
+ai:
+  ollama_url: "http://localhost:11434"
+  insights_url: "http://localhost:8082"  # For testing worker calling insights service

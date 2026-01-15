@@ -1,0 +1,53 @@
+# Production compose - only local dependencies (Ollama)
+# Postgres uses remote Supabase database
+# Redis uses remote Upstash
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    entrypoint: ["/bin/sh", "-c"]
+    command: > 
+      "ollama serve & sleep 5 && ollama pull mistral && wait"
+
+  queue-core:
+    build: .
+    command: ["/bin/queue-core"]
+    environment:
+      - CONFIG_ENV=prod
+    volumes: 
+      - ./configs:/app/configs
+    ports:
+      - "8080:8080"
+
+  worker-runtime:
+    build: .
+    command: ["/bin/worker-runtime"]
+    environment:
+      - CONFIG_ENV=prod
+    volumes: 
+      - ./configs:/app/configs
+
+  ai-insights-service:
+    build: .
+    command: ["/bin/ai-insights-service"]
+    environment:
+      - CONFIG_ENV=prod
+    volumes: 
+      - ./configs:/app/configs
+    depends_on:
+      - ollama
+    ports:
+      - "8082:8082"
+
+volumes:
+  ollama_data:
