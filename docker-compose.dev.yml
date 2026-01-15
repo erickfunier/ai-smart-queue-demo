@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    entrypoint: ["/bin/sh", "-c"]
+    command: > 
+      "ollama serve & sleep 5 && ollama pull mistral && wait"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - CONFIG_ENV=dev
+    volumes:
+      - ./configs:/app/configs
+    restart: "no"
+
+  queue-core:
+    build: .
+    command: ["/bin/queue-core"]
+    environment:
+      - CONFIG_ENV=dev
+    volumes: 
+      - ./configs:/app/configs
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8080:8080"
+
+  worker-runtime:
+    build: .
+    command: ["/bin/worker-runtime"]
+    environment:
+      - CONFIG_ENV=dev
+    volumes: 
+      - ./configs:/app/configs
+    depends_on:
+      - postgres
+      - redis
+
+  ai-insights-service:
+    build: .
+    command: ["/bin/ai-insights-service"]
+    environment:
+      - CONFIG_ENV=dev
+    volumes: 
+      - ./configs:/app/configs
+    depends_on:
+      - postgres
+      - ollama
+    ports:
+      - "8082:8082"
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
