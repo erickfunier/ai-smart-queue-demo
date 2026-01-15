@@ -1,0 +1,28 @@
+﻿server:
+  port: 8080
+
+postgres:
+  # Supabase connection string
+  # Get from: Supabase Dashboard > Project Settings > Database > Connection String (Pooler)
+  # Format: postgresql://postgres.<project-id>:<password>@<region>.pooler.supabase.com:6543/postgres?sslmode=require
+  dsn: "postgresql://postgres.YOUR_PROJECT_ID:YOUR_PASSWORD@aws-0-us-west-2.pooler.supabase.com:6543/postgres?sslmode=require&default_query_exec_mode=simple_protocol"
+
+redis:
+  # Upstash Redis URL  
+  # Get from: Upstash Dashboard > Your Database > REST API > REDIS_URL
+  # Format: rediss://default:<password>@<endpoint>:<port>
+  url: "rediss://default:YOUR_REDIS_PASSWORD@your-redis-endpoint.upstash.io:6379"
+  addr: ""
+  tls_skip_verify: true
+
+worker:
+  max_attempts: 3
+  base_backoff_ms: 500
+
+simulation:
+  enabled: true
+  failure_rate: 0.3
+
+ai:
+  ollama_url: "http://ollama:11434"
+  insights_url: "http://localhost:8082"
